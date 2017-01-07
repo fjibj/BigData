@@ -1,22 +1,27 @@
-ÓÃpig loaderµ¼³öphoenix±í         CDH5.4.7
+ç”¨pig loaderå¯¼å‡ºphoenixè¡¨         CDH5.4.7
 
-cdhÄ¬ÈÏÊÇ×°ÁËpigµÄ£¬Ä¿Â¼ÊÇ/opt/cloudera/parcels/CDH/lib/pig
+cdhé»˜è®¤æ˜¯è£…äº†pigçš„ï¼Œç›®å½•æ˜¯/opt/cloudera/parcels/CDH/lib/pig
 
 $pig
-grunt>   --³öÏÖÕâ¸ö¾Í¶ÔÁË
 
-grunt>quit --ÍË³ö
+grunt>   --å‡ºç°è¿™ä¸ªå°±å¯¹äº†
+
+grunt>quit --é€€å‡º
 
 $vi staff.pig
 
 REGISTER /opt/phoenix/phoenix-4.5.2-HBase-1.0-client.jar;
+
 rows = load 'hbase://table/"STAFF"' USING org.apache.phoenix.pig.PhoenixHBaseLoader('hd1,hd2,hd3:2181');
+
 STORE rows INTO 'staff' USING PigStorage(',');
+
 
 $pig -x mapreduce staff.pig
 
-½á¹û±£´æÔÚhdfs://hd2:8020/user/tcy/staff Ä¿Â¼ÖĞ
+ç»“æœä¿å­˜åœ¨hdfs://hd2:8020/user/tcy/staff ç›®å½•ä¸­
 
-È¡»Ø±¾µØ
+å–å›æœ¬åœ°
+
 hadoop fs -get staff.csv/part-m-00000 staff.csv
 
