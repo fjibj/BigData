@@ -611,6 +611,100 @@ PING 192.168.1.206 (192.168.1.206): 56 data bytes
 # kubectl exec -it multus-alpine-2 -- ping 192.168.1.207
 PING 192.168.1.207 (192.168.1.207): 56 data bytes
 ^C
-···
+```
 
 完成验证！！
+
+
+# 子网跨主机验证
+
+上述bridge方式只支持子网的各个POD在同一Host的情况，如果要跨主机，必须使用macvlan或ipvlan
+
+macvlan或ipvlan是以网卡为物理承载，但可以通过网卡虚拟化，将某个网卡虚拟成多个网卡使用
+
+网卡虚拟化
+```
+在所有节点上执行：
+#确认内核是够载入了802.1q模组
+lsmod|grep 8021q  
+#如果没载入使用这个命令载入模组
+modprobe -a 8021q 
+#配置epel源
+yum install epel-release -y
+#安装vconfig
+yum install vconfig -y
+#通过ip -a或者ifconfig -a查看是否生效
+
+# 使用 vconfig 命令在 eth0 配置两个 VLAN
+vconfig add eth0 100
+vconfig add eth0 200
+
+# 设置 VLAN 的 REORDER_HDR 参数，默认就行了
+vconfig set_flag eth0.100 1 1
+vconfig set_flag eth0.200 1 1
+
+# 启用接口
+ifconfig eth0.100 up
+ifconfig eth0.200 up
+```
+
+创建子网
+```
+# cat sub-sub-mac1.yaml 
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: sub-sub-mac1
+spec:
+  config: '{
+      "cniVersion": "0.3.0",
+      "type": "macvlan",
+      "master": "eth0.100",
+      "mode": "bridge",
+      "ipam": {
+        "type": "host-local",
+        "subnet": "192.168.1.0/24",
+        "rangeStart": "192.168.1.200",
+        "rangeEnd": "192.168.1.216",
+        "routes": [
+          { "dst": "0.0.0.0/0" }
+        ],
+        "gateway": "192.168.1.1"
+      }
+    }'
+
+# kubectl apply -f sub-sub-mac1.yaml
+networkattachmentdefinition.k8s.cni.cncf.io/sub-sub-mac1 created
+
+# cat sub-sub-mac2.yaml
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: sub-sub-mac2
+spec:
+  config: '{
+      "cniVersion": "0.3.0",
+      "type": "macvlan",
+      "master": "eth0.200",
+      "mode": "bridge",
+      "ipam": {
+        "type": "host-local",
+        "subnet": "192.168.1.0/24",
+        "rangeStart": "192.168.1.200",
+        "rangeEnd": "192.168.1.216",
+        "routes": [
+          { "dst": "0.0.0.0/0" }
+        ],
+        "gateway": "192.168.1.1"
+      }
+    }'
+
+# kubectl apply -f sub-sub-mac2.yaml 
+networkattachmentdefinition.k8s.cni.cncf.io/sub-sub-mac2 created
+```
+属于同一macvlan子网的POD可以跨主机，但彼此之间是ping通的;
+
+属于不同macvlan子网的POD之间是不能ping通的（使用macvlan中定义的IP）
+
+验证通过！
+
