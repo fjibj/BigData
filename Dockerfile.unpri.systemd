@@ -1,0 +1,113 @@
+FROM centos:7.6.1810
+ENV container docker
+
+
+# NOTE: Systemd needs /sys/fs/cgroup directoriy to be mounted from host in
+# read-only mode.
+
+# Systemd needs /run directory to be a mountpoint, otherwise it will try
+# to mount tmpfs here (and will fail).
+#VOLUME /run
+
+#RUN yum update -y
+RUN yum groupinstall -y "Minimal Install"
+RUN yum install -y epel-release
+RUN yum groupinstall -y "Xfce"
+#RUN yum groupinstall -y "Development Tools"
+RUN yum install -y xrdp supervisor python bash vim
+#RUN yum install -y tigervnc-server net-tools zsh libevent file bind-utils supervisor libxml2 mock gcc rpm-build rpm-devel rpmlint make python bash coreutils diffutils patch rpmdevtools traceroute wget gedit
+
+RUN yum remove -y NetworkManager ctags
+
+#RUN yum -y install kde-l10n-Chinese && yum -y reinstall glibc-common #安装中文支持 
+#RUN localedef -v -c -i zh_CN -f UTF-8 zh_CN.UTF-8; echo "";  #配置显示中文
+
+#修改root用户密码
+RUN echo "root:qwe123!@#" | chpasswd   
+
+#install 安装支持中文的字体
+RUN yum install -y wqy*
+
+#RUN yum install -y cjkuni-uming-fonts.noarch fcitx* #安装输入法
+RUN yum install -y ibus ibus-libpinyin ibus-gtk2 ibus-gtk3
+
+#安装chrome
+ADD rpms/google-chrome-stable_current_x86_64.rpm /
+RUN yum localinstall -y ./google-chrome-stable_current_x86_64.rpm
+
+#RUN yum install -y openssh-server && echo "UseDNS no" >> /etc/ssh/sshd_config && sed -i 's#GSSAPIAuthentication yes#GSSAPIAuthentication no#g' /etc/ssh/sshd_config
+
+RUN yum install -y openssh-server && yum clean all && echo "UseDNS no" >> /etc/ssh/sshd_config && systemctl enable sshd
+RUN sed -i 's#GSSAPIAuthentication yes#GSSAPIAuthentication no#g' /etc/ssh/sshd_config
+
+RUN yum remove mariadb* -y && yum install libaio net-tools -y
+
+RUN /usr/sbin/sshd-keygen
+
+#设置远程桌面
+#ADD setupcontainer1.sh /
+#RUN /bin/bash -xe  /setupcontainer1.sh
+RUN systemctl enable sshd && \
+systemctl enable xrdp && \
+systemctl disable kdump && \
+cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+rm -f /etc/xdg/autostart/xfce-polkit.desktop && \
+echo '%wheel        ALL=(ALL)       NOPASSWD: ALL' >> /etc/sudoers
+
+RUN yum clean all && rm -fr /var/cache/yum/* /tmp/*
+
+#删除安装包
+#RUN rm -rf /setupcontainer1.sh
+RUN rm -rf /google-chrome-stable_current_x86_64.rpm
+
+#设置用户与xfce桌面
+ADD xfce4-panel.xml /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/
+ADD Chrome.desktop /
+ADD pinyin.desktop /
+ADD entrypoint.sh /
+
+#创建hadoop用户
+RUN useradd -b /home -m -s /bin/bash hadoop 
+RUN echo "hadoop:Newland@123" | chpasswd
+RUN gpasswd -a hadoop wheel
+
+#启动输入法
+USER hadoop
+RUN mkdir -p /home/hadoop/Desktop && \
+  cp /Chrome.desktop /home/hadoop/Desktop/ && \
+  chmod +x /home/hadoop/Desktop/Chrome.desktop && \
+  mkdir -p /home/hadoop/.config/autostart && \
+  cp /pinyin.desktop /home/hadoop/.config/autostart/ && \
+  chmod +x /home/hadoop/.config/autostart/pinyin.desktop && \
+  echo "umask 0022" >> /home/hadoop/.bashrc && \
+  source /home/hadoop/.bashrc
+
+USER root
+RUN useradd -b /home -m -s /bin/bash -g hadoop hdfs
+RUN useradd -b /home -m -s /bin/bash -g hadoop yarn
+RUN useradd -b /home -m -s /bin/bash -g hadoop hive
+RUN useradd -b /home -m -s /bin/bash -g hadoop sqoop
+RUN useradd -b /home -m -s /bin/bash -g hadoop zookeeper
+RUN useradd -b /home -m -s /bin/bash -g hadoop trino
+RUN useradd -b /home -m -s /bin/bash -g hadoop dolphinscheduler
+RUN useradd -b /home -m -s /bin/bash -g hadoop spark
+RUN useradd -b /home -m -s /bin/bash -g hadoop flink
+RUN useradd -b /home -m -s /bin/bash -g hadoop hbase
+RUN useradd -b /home -m -s /bin/bash -g hadoop kafka
+RUN useradd -b /home -m -s /bin/bash -g hadoop solr
+RUN useradd -b /home -m -s /bin/bash -g hadoop atlas
+RUN useradd -b /home -m -s /bin/bash -g hadoop zabbix
+
+
+RUN rm -rf /pinyin.desktop
+RUN rm -rf /Chrome.desktop
+EXPOSE 3389 
+EXPOSE 22
+VOLUME /run
+#VOLUME /home
+RUN echo "umask 0022" >> /etc/profile && \
+  source /etc/profile && \
+  rm -f /etc/localtime && \
+  ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+CMD ["/usr/sbin/init"]
+ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
