@@ -1,0 +1,95 @@
+FROM centos:7.6.1810
+
+ARG PREFIX_DIR=/usr/local/guacamole
+
+# Build arguments
+ARG BUILD_DIR=/tmp/guacd-docker-BUILD
+
+# Runtime environment
+ENV LC_ALL=zh_CN.UTF-8
+ENV LANG=zh_CN.UTF-8
+ENV LD_LIBRARY_PATH=${PREFIX_DIR}/lib
+ENV GUACD_LOG_LEVEL=info
+
+ARG BUILD_DEPENDENCIES="              \
+        cairo-devel                   \
+        libjpeg-turbo-devel           \
+        libjpeg-devel                 \
+        libpng-devel                  \
+        libtool                       \
+        libuuid-devel                 \
+        uuid-devel                    \
+        ffmpeg-devel                  \
+        freerdp-devel                 \
+        pango-devel                   \
+        libssh2-devel                 \
+        libtelnet-devel               \
+        libvncserver-devel            \
+        libwebsockets-devel           \
+        pulseaudio-libs-devel         \
+        openssl-devel                 \
+        libvorbis-devel               \
+        libwebp-devel                 \
+        libgcrypt-devel               \
+        libvncserver-devel            \
+        gcc-c++                       \
+        make"
+
+ARG RUNTIME_DEPENDENCIES="            \
+        netcat                        \
+        ca-certificates               \
+        ghostscript                   \
+        liberation-mono-fonts         \
+        liberation-sans-fonts         \
+        dejavu-sans-fonts             \
+        dejavu-sans-mono-fonts        \
+        dejavu-serif-fonts            \
+        wqy-microhei-fonts            \
+        wqy-zenhei-fonts"
+
+# Bring build environment up to date and install build dependencies
+RUN yum install -y $BUILD_DEPENDENCIES               && \
+    yum install -y $RUNTIME_DEPENDENCIES             && \
+    yum -y install kde-l10n-Chinese telnet           && \
+    yum -y reinstall glibc-common                    && \
+    yum clean all                                    && \
+    localedef -c -f UTF-8 -i zh_CN zh_CN.utf8        && \
+    cat /dev/null > /etc/locale.conf                 && \
+    echo "LC_ALL=\"zh_CN.UTF-8\"" > /etc/locale.conf && \
+    rm -fr /var/cache/yum/* /tmp/*
+
+# Add configuration scripts
+COPY src/guacd-docker/bin "${PREFIX_DIR}/bin/"
+
+# Copy source to container for sake of build
+COPY . "$BUILD_DIR"
+
+# Build guacamole-server from local source
+RUN ${PREFIX_DIR}/bin/build-guacd.sh "$BUILD_DIR" "$PREFIX_DIR"
+
+# Link FreeRDP plugins into proper path
+RUN ${PREFIX_DIR}/bin/link-freerdp-plugins.sh \
+        ${PREFIX_DIR}/lib/freerdp2/libguac*.so
+
+# Checks the operating status every 5 minutes with a timeout of 5 seconds
+HEALTHCHECK --interval=5m --timeout=5s CMD nc -z 127.0.0.1 4822 || exit 1
+
+# Create a new user guacd
+ARG UID=1000
+ARG GID=1000
+RUN groupadd --gid $GID guacd
+RUN useradd --system --create-home --shell /usr/sbin/nologin --uid $UID --gid $GID guacd
+
+
+# Run with user guacd
+USER guacd
+
+# Expose the default listener port
+EXPOSE 4822
+
+# Start guacd, listening on port 0.0.0.0:4822
+#
+# Note the path here MUST correspond to the value specified in the 
+# PREFIX_DIR build argument.
+#
+CMD /usr/local/guacamole/sbin/guacd -b 0.0.0.0 -L $GUACD_LOG_LEVEL -f
